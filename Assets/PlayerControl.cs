@@ -4,6 +4,10 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
+
 /// <summary>Control for a 2D player.</summary>
 [RequireComponent(typeof(Rigidbody2D))] public class PlayerControl : MonoBehaviour
 {
@@ -17,71 +21,102 @@ using UnityEngine;
     //TODO: RUN< JUMP< CLIMB
     //TODO: Placeholder images to identify action
     public float movementSpeed;
+    public float maxSpeed = 200f;
     public float jumpPower;
     public string horizontalAxisLabel;
 
     public bool canOnlyRunWhenGrounded = false;
     public bool runWithMomentum = true;
 
-    [SerializeField] private Vector2 horizontalMovement;
-    [SerializeField] private Vector2 verticalMovement;
-    [SerializeField] private Rigidbody2D rigidBody;
-    [SerializeField] private bool isGrounded;
+    [SerializeField] private Rigidbody2D rigidbody;
+    [SerializeField] private BoxCollider2D collider;
+    /// <summary>The distance from the center of the collider to the ground.</summary>
+    [SerializeField] private float distanceToGround;
+    /// <summary>The additional buffer between the edge of the player collider and the ground to 
+    /// allow for ground checking.</summary>
+    [SerializeField] private float groundingBuffer = 0.1f;
+
+    bool isGrounded
+    {
+        get
+        {
+            return Physics2D.Raycast((Vector2)transform.position, Vector2.down, 
+                0.6f, 1 << 8);
+        }
+    }
 
     private void Awake()
     {
-        rigidBody = GetComponent<Rigidbody2D>();
+        rigidbody = GetComponent<Rigidbody2D>();
+        collider = GetComponent<BoxCollider2D>();
     }
 
     private void Start()
     {
-        horizontalMovement = Vector2.zero;
-        verticalMovement = Vector2.zero;
+        distanceToGround = collider.bounds.extents.y;
     }
 
     // Fixed Update runs in synch with the physics system
     private void FixedUpdate()
     {
-        ApplyHorizontalMovement ();
-        ApplyVerticalMovement ();
+        ApplyHorizontalInput();
+        ApplyVerticalInput();
+        CapSpeed();
     }
 
-    void ApplyHorizontalMovement()
+    void CapSpeed()
     {
-        if (!canOnlyRunWhenGrounded || isGrounded)
+        if(rigidbody.velocity.magnitude > maxSpeed)
+        {
+            rigidbody.velocity = rigidbody.velocity.normalized * maxSpeed;
+        }
+    }
+
+    void ApplyHorizontalInput()
+    {
+        if(!canOnlyRunWhenGrounded || isGrounded)
         {
             // If we are not set to only run when grounded, or are otherwise grounded, 
             // use the horizontal axis and movement speed to determine our current horizontal
-            // movement.
-            horizontalMovement.x = Input.GetAxis (horizontalAxisLabel) * movementSpeed;
+            // movement, and apply fixed time scaling to it.
+            float runningSpeed = Input.GetAxis(horizontalAxisLabel) * movementSpeed;
 
             // If the horizontal movement does not have an empty x value,
-            if (horizontalMovement.x != 0f)
+            if (runningSpeed != 0f)
             {
-                if (runWithMomentum)
-                {
-                    // If we are running with momentum, add the horizontal movement as a force
-                    // to the rigidbody.
-                    rigidBody.AddForce (horizontalMovement);
-                } 
-                else
-                {
-                    // If we are not running with momentum, apply a direct translation to the 
-                    // transform, accounting for the fixed delta time gap.
-                    transform.Translate (horizontalMovement * Time.fixedDeltaTime);
-                }
+                // Move the player towards the horizontalMovement position by its rigidbody.
+                rigidbody.AddForce(Vector2.right * runningSpeed);
             }
         }
     }
 
-    void ApplyVerticalMovement()
+    void ApplyVerticalInput()
     {
-        if (isGrounded && Input.GetKeyDown(KeyCode.Space))
+        if(Input.GetKeyDown(KeyCode.Space) && isGrounded)
         {
-            Debug.Log ("HJU");
-            verticalMovement.y = jumpPower;
+            rigidbody.AddForce(Vector2.up * jumpPower);
+        }
+    }
 
-            rigidBody.AddForce(verticalMovement);
+    #if UNITY_EDITOR
+    public void FireTestRay()
+    {
+        RaycastHit2D hit = Physics2D.Raycast((Vector2)transform.position, Vector2.down, 0.6f, 1<<8);
+        Debug.Log(hit.collider.name);
+    }
+    #endif
+}
+
+[CustomEditor(typeof(PlayerControl))] class PlayerControlEditor : Editor
+{
+    public override void OnInspectorGUI()
+    {
+        DrawDefaultInspector();
+
+        if(GUILayout.Button("Fire Ray"))
+        {
+            PlayerControl playerControl = target as PlayerControl;
+            playerControl.FireTestRay();
         }
     }
 }
