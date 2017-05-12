@@ -378,16 +378,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 345ab68c591b05f45a561586ef1efa40, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  movementSpeed: 10
-  maxSpeed: 200
-  jumpPower: 100
-  horizontalAxisLabel: Run
-  canOnlyRunWhenGrounded: 0
-  runWithMomentum: 0
-  rigidbody: {fileID: 0}
-  collider: {fileID: 0}
-  distanceToGround: 0
-  groundingBuffer: 2.9
+  runForce: 5
+  jumpForce: 1000
+  maxRunVelocity: 10
 --- !u!1 &406677639
 GameObject:
   m_ObjectHideFlags: 0
@@ -787,16 +780,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 345ab68c591b05f45a561586ef1efa40, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  movementSpeed: 10
-  maxSpeed: 200
-  jumpPower: 10
-  horizontalAxisLabel: Run
-  canOnlyRunWhenGrounded: 0
-  runWithMomentum: 1
-  rigidbody: {fileID: 0}
-  collider: {fileID: 0}
-  distanceToGround: 0
-  groundingBuffer: 0.1
+  runForce: 200
+  jumpForce: 1000
+  maxRunVelocity: 200
 --- !u!50 &1142993505
 Rigidbody2D:
   serializedVersion: 4
