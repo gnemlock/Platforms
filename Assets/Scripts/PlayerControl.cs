@@ -8,10 +8,11 @@ using UnityEngine;
 using UnityEditor;
 #endif
 
+//TODO:Fix namespace generation
+
 namespace Platforms
 {
-    using Dimensions = Platforms.Utility.PlayerControlDimensions;
-    using Tags = Platforms.Utility.PlayerControlTags;
+    using Tags = Platforms.Utility.PlatformsTags;
     
     #if UNITY_EDITOR
     using Tooltips = Platforms.Utility.PlayerControlTooltips;
@@ -29,100 +30,190 @@ namespace Platforms
         //TODO: Documentation
         //TODO: RUN< JUMP< CLIMB
         //TODO: Placeholder images to identify action
-        
-        [SerializeField][Tooltip(Tooltips.runForce)] private float runForce = 200f;
+
+        public bool grounded { get; private set; }
+        public bool preparedToJump { get; private set; }
+        public bool facingRight { get; private set; }
+
+        [SerializeField][Tooltip(Tooltips.runForce)] private float runForce = 365f;
         [SerializeField][Tooltip(Tooltips.jumpForce)] private float jumpForce = 1000f;
-        [SerializeField][Tooltip(Tooltips.maxRunVelocity)] private float maxRunVelocity = 200f;
+        [SerializeField][Tooltip(Tooltips.maximumRunSpeed)] private float maximumRunSpeed = 5f;
+        [SerializeField][Tooltip(Tooltips.groundCheck)] private Transform groundCheck;
+
+        [SerializeField] private PlayerState playerState;
+        [SerializeField] private float ledgeDistance = 1.0f;
+        [SerializeField] private Transform hand;
         
         private Rigidbody2D rigidbody;
         private BoxCollider2D collider;
+        private Animator animator;
         /// <summary>The distance from the center of the collider to the ground.</summary>
         private float distanceToGround;
-        private bool jumping = false;
-        
-        /// <summary>Determines whether this <see cref="Platforms.PlayerControl"/> is currently 
-        /// grounded.</summary>
-        bool isGrounded
-        {
-            get
-            {
-                // Perform a linecase between the current transform position, and the postion 
-                // where the ground should be, checking only against the ground layer.
-                // Return the results as a not null check.
-                return Physics2D.Linecast((Vector2)transform.position, 
-                    Vector2.down * (distanceToGround + Dimensions.groundBuffer), 
-                    1 << Dimensions.groundLayerIndex);
-            }
-        }
+        private Transform attachedLedge;
         
         private void Awake()
         {
             // Set a reference to the local Rigidbody2D and BoxCollider2D components.
             rigidbody = GetComponent<Rigidbody2D>();
-            collider = GetComponent<BoxCollider2D>();
-        }
-        
-        private void Start()
-        {
-            // Set the distanceToGround as the lower y bound of the players collider.
-            distanceToGround = collider.bounds.extents.y;
+            animator = GetComponent<Animator>();
+            playerState = PlayerState.Default;
+            facingRight = true;
+            preparedToJump = false;
         }
         
         // Fixed Update runs in synch with the physics system
         private void FixedUpdate()
         {
-            ApplyHorizontalInput();
-            ApplyVerticalInput();
+            if(playerState == PlayerState.Default)
+            {
+                CheckInputDefaultState();
+            }
+            else if(playerState == PlayerState.Hanging)
+            {
+                CheckInputHangingState();
+            }
         }
-        
-        //TODO:Probably better to check for input in the update, but this seems to make things janky. fix it.
-        //TODO: see if I can use own type to float>double hot swap
-        /*private void Update()
+
+        private void OnTriggerEnter2D(Collider2D other)
         {
-            if(Input.GetButtonDown(Tags.jumpInput) && isGrounded)
+            if(other.tag == Tags.ledge)
             {
-                jumping = true;
+                AttemptToHang(other.transform);
             }
-        }*/
-        
-        void ApplyHorizontalInput()
+        }
+
+        private void OnTriggerStay2D(Collider2D other)
         {
-            // If we are not set to only run when grounded, or are otherwise grounded, 
-            // use the horizontal axis and movement speed to determine our current horizontal
-            // movement, and apply fixed time scaling to it.
-            float runInput = Input.GetAxis(Tags.horizontalInput) * runForce;
-            
-            // If the horizontal movement does not have an empty x value,
-            if (runInput != 0f)
+            if(other.tag == Tags.ledge)
             {
-                // Move the player towards the horizontalMovement position by its rigidbody.
-                rigidbody.AddForce(Vector2.right * runInput);
+                AttemptToHang(other.transform);
             }
-            
-            if(Mathf.Abs(rigidbody.velocity.x) > maxRunVelocity)
+        }
+
+        private void Update()
+        {
+            grounded = Physics2D.Linecast(transform.position, groundCheck.position, 
+                1 << LayerMask.NameToLayer(Tags.groundLayer));
+
+            if(Input.GetButtonDown(Tags.jumpInput) && grounded)
             {
-                rigidbody.velocity = new Vector2(Mathf.Sign(rigidbody.velocity.x) * maxRunVelocity, 
+                preparedToJump = true;
+                //TODO: Implement ability to "power" jump
+            }
+        }
+
+        private void CheckInputDefaultState()
+        {
+            float horizontalInput = Input.GetAxis(Tags.horizontalInput);
+
+            animator.SetFloat(Tags.speed, Mathf.Abs(horizontalInput));
+
+            if((horizontalInput * rigidbody.velocity.x) < maximumRunSpeed)
+            {
+                rigidbody.AddForce(Vector2.right * horizontalInput * runForce);
+            }
+
+            if(Mathf.Abs(rigidbody.velocity.x) > maximumRunSpeed)
+            {
+                Vector2 cappedVelocity 
+                    = new Vector2((Mathf.Sign(rigidbody.velocity.x) * maximumRunSpeed), 
                     rigidbody.velocity.y);
+
+                rigidbody.velocity = cappedVelocity;
             }
-        }
-        
-        void ApplyVerticalInput()
-        {
-            if(Input.GetButtonDown(Tags.jumpInput) && isGrounded)
+
+            if((horizontalInput > 0 && !facingRight) || (horizontalInput < 0 && facingRight))
             {
-                rigidbody.AddForce(new Vector2(0f, jumpForce));
+                FlipCharacter();
+            }
+
+            if(preparedToJump)
+            {
+                animator.SetTrigger(Tags.jumping);
+
+                rigidbody.AddForce(Vector2.up * jumpForce);
+
+                preparedToJump = false; 
             }
         }
-        
+
+        private void CheckInputHangingState()
+        {
+        }
+
+        private void ApplyClimbingInput()
+        {
+            float verticalInput = Input.GetAxis(Tags.horizontalInput);
+        }
+
+        private void FlipCharacter()
+        {
+            facingRight = !facingRight;
+
+            Vector3 scale = transform.localScale;
+            scale.x *= -1;
+            transform.localScale = scale;
+        }
+
+        private bool CheckInputForHanging(Vector3 ledgePosition)
+        {
+            if(Vector2.Distance(ledgePosition, hand.position) <= ledgeDistance)
+            {
+                if((transform.position.x - ledgePosition.x) < 0)
+                {
+                    if(Input.GetAxis(Tags.horizontalInput) > 0)
+                    {
+                        // we are moving towards the ledge;
+                        return true;
+                    }
+                }
+                else
+                {
+                    if(Input.GetAxis(Tags.horizontalInput) < 0)
+                    {
+                        return true;
+                    }
+                }
+            }
+                
+            return false;
+        }
+
+        public void AttemptToHang(Transform ledge)
+        {
+            if(CheckInputForHanging(ledge.position))
+            {
+                Debug.Log("Hanging");
+                rigidbody.gravityScale = 0f;
+                playerState = PlayerState.Hanging;
+                attachedLedge = ledge;
+
+                transform.position = ledge.position - (hand.position - transform.position);
+            }
+        }
+
+        public void StopHanging()
+        {
+            playerState = PlayerState.Default;
+            attachedLedge = null;
+            rigidbody.gravityScale = 1.0f;
+        }
+
         #if UNITY_EDITOR
         public void FireTestRay()
         {
             RaycastHit2D hit 
                 = Physics2D.Raycast((Vector2)transform.position, Vector2.down, 0.6f, 1<<8);
-            Debug.Log(hit.collider.name);
+            Debug.Log(hit.collider.name + " : " + hit.collider.gameObject.layer);
         }
         #endif
     }
+
+    [System.Serializable]public enum PlayerState
+    {
+        Default,
+        Hanging
+    };
 }
 
 namespace Platforms.Utility
@@ -133,11 +224,16 @@ namespace Platforms.Utility
         public override void OnInspectorGUI()
         {
             DrawDefaultInspector();
+            PlayerControl playerControl = target as PlayerControl;
     
             if(GUILayout.Button(PlayerControlLabels.fireRay))
             {
-                PlayerControl playerControl = target as PlayerControl;
                 playerControl.FireTestRay();
+            }
+
+            if(GUILayout.Button("Stop Hanging"))
+            {
+                playerControl.StopHanging();
             }
         }
     }
@@ -145,16 +241,18 @@ namespace Platforms.Utility
     
     public static class PlayerControlDimensions
     {
-        /// <summary>The additional distance to allow between the player and the floor, 
-        /// for detecting if the player is grounded.</summary>
-        public const float groundBuffer = 0.1f;
-        public const int groundLayerIndex = 8;
     }
     
-    public static class PlayerControlTags
+    public static partial class PlatformsTags
     {
         public const string horizontalInput = "Run";
         public const string jumpInput = "Jump";
+        public const string ledge = "Ledge";
+        public const string player = "Player";
+        public const string groundLayer = "Ground";
+        public const string speed = "Speed";
+        public const string climbing = "Climbing";
+        public const string jumping = "Jumping";
     }
     
     #if UNITY_EDITOR
@@ -162,7 +260,9 @@ namespace Platforms.Utility
     {
         public const string runForce = "The force to apply when the player is running.";
         public const string jumpForce = "The force to apply when the player jumps.";
-        public const string maxRunVelocity = "The maximum velocity to allow for running";
+        public const string maximumRunSpeed = "The maximum velocity to allow for running";
+        public const string groundCheck = "Transform to use when casting line checks for "
+            + "ground detection.";
     }
     
     public static class PlayerControlLabels
